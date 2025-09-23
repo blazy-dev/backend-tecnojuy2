@@ -27,8 +27,8 @@ USER app
 # Exponer puerto
 EXPOSE 8000
 
-# Comando por defecto
-# Usa el puerto proporcionado por Railway si existe, de lo contrario 8000 (útil en local)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Comando por defecto: inicia solo la app
+# Nota: ejecutar migraciones manualmente con `railway run alembic upgrade head` cuando la DB esté disponible
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
 

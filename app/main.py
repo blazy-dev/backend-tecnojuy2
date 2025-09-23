@@ -4,6 +4,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 import os
+from urllib.parse import urlparse, urlunparse
 
 from app.core.config import settings
 from app.auth.routes import router as auth_router
@@ -54,6 +55,26 @@ app.include_router(homepage_router, prefix="/homepage", tags=["homepage"])
 static_dir = "static"
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+def _mask_db_url(url: str) -> str:
+    try:
+        u = urlparse(url)
+        netloc = u.netloc
+        if "@" in netloc:
+            creds, host = netloc.split("@", 1)
+            user = creds.split(":", 1)[0] if ":" in creds else creds
+            netloc = f"{user}:***@{host}"
+        return urlunparse(u._replace(netloc=netloc))
+    except Exception:
+        return "unknown"
+
+
+@app.on_event("startup")
+async def on_startup():
+    # Log minimal info to verify DB URL source without leaking secrets
+    masked = _mask_db_url(settings.DATABASE_URL or "")
+    print(f"[startup] Using DATABASE_URL: {masked}")
 
 @app.get("/")
 async def root():
