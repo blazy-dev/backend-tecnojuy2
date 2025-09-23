@@ -47,7 +47,10 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['tag_id'], ['tags.id'], ),
     sa.PrimaryKeyConstraint('post_id', 'tag_id')
     )
-    op.drop_constraint(op.f('course_enrollments_user_id_course_id_key'), 'course_enrollments', type_='unique')
+    # Hacer el DROP CONSTRAINT de forma segura (no fallar si no existe)
+    op.execute(
+        "ALTER TABLE course_enrollments DROP CONSTRAINT IF EXISTS course_enrollments_user_id_course_id_key"
+    )
     op.create_index(op.f('ix_course_enrollments_id'), 'course_enrollments', ['id'], unique=False)
     op.create_index(op.f('ix_courses_id'), 'courses', ['id'], unique=False)
     
