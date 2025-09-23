@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app.db.session import get_db
 from app.db.models import User, Role
 from app.core.security import create_access_token, create_refresh_token, verify_token
-from app.core.config import settings
+from app.core.config import settings, FRONTEND_ORIGINS
 from app.auth.google import oauth, get_google_user_info
 from app.auth.dependencies import get_current_user
 
@@ -102,22 +102,29 @@ async def google_callback(
         access_token = create_access_token(token_data)
         refresh_token = create_refresh_token({"sub": str(user.id)})
         
+        # Dominio principal: primer origen configurado
+        primary_frontend = FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS else settings.FRONTEND_URL.rstrip('/')
+
+        is_prod = settings.ENV == "production"
+        cookie_secure = is_prod  # solo secure con HTTPS
+        same_site = "none" if is_prod else "lax"  # none para permitir third-party / subdominios
+
         # Configurar cookies seguras
-        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/dashboard")
+        response = RedirectResponse(url=f"{primary_frontend}/dashboard")
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,
-            secure=False,  # False para desarrollo local (HTTP)
-            samesite="lax",
+            secure=cookie_secure,
+            samesite=same_site,
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         )
         response.set_cookie(
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=False,  # False para desarrollo local (HTTP)
-            samesite="lax",
+            secure=cookie_secure,
+            samesite=same_site,
             max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
         )
         
@@ -197,22 +204,26 @@ async def get_current_user_info(
 @router.post("/logout")
 async def logout(response: Response):
     """Cerrar sesión"""
+    from app.core.config import settings
+    is_prod = settings.ENV == "production"
+    cookie_secure = is_prod
+    same_site = "none" if is_prod else "lax"
     # Eliminar cookies con todos los parámetros para asegurar que se borren
     response.delete_cookie(
         key="access_token",
         path="/",
         domain=None,
-        secure=False,  # Debe coincidir con el secure usado al crear la cookie
+        secure=cookie_secure,
         httponly=True,
-        samesite="lax"
+        samesite=same_site
     )
     response.delete_cookie(
         key="refresh_token",
         path="/",
         domain=None,
-        secure=False,  # Debe coincidir con el secure usado al crear la cookie
+        secure=cookie_secure,
         httponly=True,
-        samesite="lax"
+        samesite=same_site
     )
     return {"message": "Successfully logged out"}
 

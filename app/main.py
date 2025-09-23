@@ -8,7 +8,7 @@ import logging
 import os
 from urllib.parse import urlparse, urlunparse
 
-from app.core.config import settings
+from app.core.config import settings, FRONTEND_ORIGINS
 from app.auth.routes import router as auth_router
 from app.users.routes import router as users_router
 from app.posts.routes import router as posts_router
@@ -32,7 +32,7 @@ app.add_middleware(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

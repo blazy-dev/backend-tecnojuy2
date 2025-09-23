@@ -55,14 +55,21 @@ class Settings(BaseSettings):
     R2_PUBLIC_BUCKET_NAME: str = ""
     R2_PUBLIC_BUCKET_URL: str = ""
     
-    # CORS
+    # CORS / Frontend origins (puede ser uno o varios separados por coma)
     FRONTEND_URL: str = "http://localhost:4321"
+
+    # Environment: development | staging | production
+    ENV: str = "development"
     
     class Config:
         env_file = ".env"
 
 settings = Settings()
-"""
-Ensure DATABASE_URL picks up environment overrides even if pydantic settings loaded defaults first.
-"""
+"""Ensure DATABASE_URL picks up environment overrides even if pydantic settings loaded defaults first."""
 settings.DATABASE_URL = _resolve_database_url() or settings.DATABASE_URL
+
+def get_frontend_origins() -> list[str]:
+    raw = settings.FRONTEND_URL or ""
+    return [p.strip().rstrip('/') for p in raw.split(',') if p.strip()]
+
+FRONTEND_ORIGINS = get_frontend_origins()
