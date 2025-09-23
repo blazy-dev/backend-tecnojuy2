@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+import asyncio
+import logging
 import os
 from urllib.parse import urlparse, urlunparse
 
@@ -70,11 +72,36 @@ def _mask_db_url(url: str) -> str:
         return "unknown"
 
 
+def _run_db_migrations() -> None:
+    """Run Alembic migrations to head using Alembic API.
+    This runs in a background thread so startup/healthcheck aren't blocked.
+    """
+    try:
+        from alembic import command
+        from alembic.config import Config
+        # Resolve path to alembic.ini at project root (one level up from app/)
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        alembic_ini = os.path.join(project_root, "alembic.ini")
+
+        cfg = Config(alembic_ini)
+        # Ensure the runtime DB URL is used (Railway env)
+        if getattr(settings, "DATABASE_URL", None):
+            cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+        logging.getLogger("uvicorn.error").info("[migrations] Running alembic upgrade head")
+        command.upgrade(cfg, "head")
+        logging.getLogger("uvicorn.error").info("[migrations] Alembic upgrade completed")
+    except Exception as e:
+        logging.getLogger("uvicorn.error").error(f"[migrations] Alembic upgrade failed: {e}")
+
+
 @app.on_event("startup")
 async def on_startup():
     # Log minimal info to verify DB URL source without leaking secrets
     masked = _mask_db_url(settings.DATABASE_URL or "")
     print(f"[startup] Using DATABASE_URL: {masked}")
+    # Fire-and-forget DB migrations to keep startup fast
+    asyncio.create_task(asyncio.to_thread(_run_db_migrations))
 
 @app.get("/")
 async def root():
