@@ -51,8 +51,9 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE course_enrollments DROP CONSTRAINT IF EXISTS course_enrollments_user_id_course_id_key"
     )
-    op.create_index(op.f('ix_course_enrollments_id'), 'course_enrollments', ['id'], unique=False)
-    op.create_index(op.f('ix_courses_id'), 'courses', ['id'], unique=False)
+    # Crear índices de forma idempotente (evitar error si ya existen)
+    op.execute('CREATE INDEX IF NOT EXISTS "ix_course_enrollments_id" ON course_enrollments (id)')
+    op.execute('CREATE INDEX IF NOT EXISTS "ix_courses_id" ON courses (id)')
     
     # Crear capítulos por defecto para cursos que tienen lecciones sin chapter_id
     connection = op.get_bind()
@@ -90,7 +91,7 @@ def upgrade() -> None:
     op.alter_column('lessons', 'chapter_id',
                existing_type=sa.INTEGER(),
                nullable=False)
-    op.create_index(op.f('ix_lessons_id'), 'lessons', ['id'], unique=False)
+    op.execute('CREATE INDEX IF NOT EXISTS "ix_lessons_id" ON lessons (id)')
     op.drop_constraint(op.f('lessons_course_id_fkey'), 'lessons', type_='foreignkey')
     op.create_foreign_key(None, 'lessons', 'courses', ['course_id'], ['id'])
     op.drop_column('lessons', 'duration_minutes')
@@ -146,12 +147,13 @@ def downgrade() -> None:
     op.add_column('lessons', sa.Column('duration_minutes', sa.INTEGER(), autoincrement=False, nullable=True))
     op.drop_constraint(None, 'lessons', type_='foreignkey')
     op.create_foreign_key(op.f('lessons_course_id_fkey'), 'lessons', 'courses', ['course_id'], ['id'], ondelete='CASCADE')
-    op.drop_index(op.f('ix_lessons_id'), table_name='lessons')
+    # Eliminar índices de forma segura (no fallar si no existen)
+    op.execute('DROP INDEX IF EXISTS "ix_lessons_id"')
     op.alter_column('lessons', 'chapter_id',
                existing_type=sa.INTEGER(),
                nullable=True)
-    op.drop_index(op.f('ix_courses_id'), table_name='courses')
-    op.drop_index(op.f('ix_course_enrollments_id'), table_name='course_enrollments')
+    op.execute('DROP INDEX IF EXISTS "ix_courses_id"')
+    op.execute('DROP INDEX IF EXISTS "ix_course_enrollments_id"')
     op.create_unique_constraint(op.f('course_enrollments_user_id_course_id_key'), 'course_enrollments', ['user_id', 'course_id'], postgresql_nulls_not_distinct=False)
     op.drop_table('post_tags')
     op.drop_index(op.f('ix_tags_slug'), table_name='tags')
