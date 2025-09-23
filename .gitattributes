@@ -1,0 +1,15 @@
+* text=auto
+
+# Normalize line endings to LF for code and scripts (helps in Docker/Linux)
+*.py text eol=lf
+*.sh text eol=lf
+*.sql text eol=lf
+Dockerfile text eol=lf
+
+# Keep images/binaries untouched
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
