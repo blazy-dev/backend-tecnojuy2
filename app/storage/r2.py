@@ -10,22 +10,45 @@ from app.core.config import settings
 # Configurar logger
 logger = logging.getLogger(__name__)
 
+
 class R2Service:
     def __init__(self):
-        self.client = boto3.client(
-            's3',
-            endpoint_url=settings.R2_ENDPOINT_URL,
-            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-            region_name='auto'
-        )
-        # Bucket privado (por defecto)
-        self.bucket_name = settings.R2_BUCKET_NAME
-        self.public_url = settings.R2_PUBLIC_URL
-        
-        # Bucket público para blog/assets
-        self.public_bucket_name = settings.R2_PUBLIC_BUCKET_NAME
-        self.public_bucket_url = settings.R2_PUBLIC_BUCKET_URL
+        # Leer config desde variables de entorno
+        endpoint_url = (settings.R2_ENDPOINT_URL or "").strip()
+        access_key = (settings.R2_ACCESS_KEY_ID or "").strip()
+        secret_key = (settings.R2_SECRET_ACCESS_KEY or "").strip()
+
+        # Buckets/URLs (pueden estar vacíos en entornos sin R2)
+        self.bucket_name = (settings.R2_BUCKET_NAME or "").strip()
+        self.public_url = (settings.R2_PUBLIC_URL or "").strip()
+        self.public_bucket_name = (settings.R2_PUBLIC_BUCKET_NAME or "").strip()
+        self.public_bucket_url = (settings.R2_PUBLIC_BUCKET_URL or "").strip()
+
+        # Solo crea el cliente si hay endpoint y credenciales; si no, deja deshabilitado
+        if endpoint_url and access_key and secret_key:
+            try:
+                self.client = boto3.client(
+                    's3',
+                    endpoint_url=endpoint_url,
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name='auto'
+                )
+                self.enabled = True
+                logger.info("R2 client initialized for endpoint %s", endpoint_url)
+            except Exception:
+                # No bloquea el arranque si falla aquí
+                self.client = None
+                self.enabled = False
+                logger.exception("Failed to initialize R2 client; R2 features disabled")
+        else:
+            self.client = None
+            self.enabled = False
+            logger.warning("R2 not configured (missing endpoint and/or credentials); storage features disabled")
+
+    def _require_client(self) -> None:
+        if not self.client:
+            raise Exception("R2 is not configured. Set R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and bucket variables.")
     
     def generate_presigned_url(
         self,
@@ -36,6 +59,7 @@ class R2Service:
     ) -> dict:
         """Generar URL firmada para subida directa a R2"""
         try:
+            self._require_client()
             # Generar nombre único para el archivo
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             unique_id = str(uuid.uuid4())[:8]
@@ -69,6 +93,7 @@ class R2Service:
     def delete_object(self, object_key: str) -> bool:
         """Eliminar objeto de R2"""
         try:
+            self._require_client()
             self.client.delete_object(Bucket=self.bucket_name, Key=object_key)
             return True
         except ClientError:
@@ -81,6 +106,7 @@ class R2Service:
     def check_object_exists(self, object_key: str) -> bool:
         """Verificar si un objeto existe en R2"""
         try:
+            self._require_client()
             self.client.head_object(Bucket=self.bucket_name, Key=object_key)
             return True
         except ClientError:
@@ -89,6 +115,7 @@ class R2Service:
     def generate_presigned_get_url(self, object_key: str, expiration: int = 3600) -> str:
         """Generar URL firmada para descargar un objeto"""
         try:
+            self._require_client()
             return self.client.generate_presigned_url(
                 'get_object',
                 Params={
@@ -106,6 +133,7 @@ class R2Service:
         """
         import asyncio
         try:
+            self._require_client()
             logger.info("Uploading object to public R2 bucket")
             logger.debug(
                 "bucket=%s key=%s content_type=%s size_bytes=%s",
@@ -151,6 +179,7 @@ class R2Service:
         """
         import asyncio
         try:
+            self._require_client()
             logger.info("Uploading object to R2")
             logger.debug(
                 "bucket=%s key=%s content_type=%s size_bytes=%s",
@@ -189,7 +218,7 @@ class R2Service:
             logger.exception("Unexpected error uploading to R2 for key=%s", object_key)
             return False, str(e)
 
-# Instancia global del servicio
+# Instancia global del servicio (no falla si no está configurado)
 r2_service = R2Service()
 
 
