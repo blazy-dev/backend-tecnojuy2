@@ -13,3 +13,4 @@ python-multipart
 markdown
 httpx
 pydantic-settings
+itsdangerous>=2.1.2
