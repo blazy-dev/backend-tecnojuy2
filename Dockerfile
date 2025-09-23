@@ -27,5 +27,5 @@ USER app
 # Exponer puerto
 EXPOSE 8000
 
-# Comando por defecto: ejecutar migraciones y luego iniciar la app
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Comando por defecto: solo iniciar la app (sin migraciones)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
