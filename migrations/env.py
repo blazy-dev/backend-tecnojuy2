@@ -26,8 +26,22 @@ target_metadata = Base.metadata
 # ... etc.
 
 def get_url():
-    """Obtener URL de base de datos desde variables de entorno"""
-    return os.getenv("DATABASE_URL", "postgresql://postgres:bejulu230903@localhost:5432/tecnojuy")
+    """Obtener URL de base de datos desde variables de entorno (Railway/PG friendly)."""
+    # Priority: DATABASE_URL, POSTGRES_URL, or construct from PG* variables
+    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+    if not url:
+        host = os.getenv("PGHOST")
+        user = os.getenv("PGUSER")
+        password = os.getenv("PGPASSWORD")
+        db = os.getenv("PGDATABASE")
+        port = os.getenv("PGPORT", "5432")
+        if all([host, user, password, db]):
+            url = f"postgresql://{user}:{password}@{host}:{port}/{db}"
+            sslmode = os.getenv("PGSSLMODE") or os.getenv("DB_SSLMODE")
+            if sslmode:
+                sep = "?" if "?" not in url else "&"
+                url = f"{url}{sep}sslmode={sslmode}"
+    return url or "postgresql://postgres:postgres@localhost:5432/tecnojuy"
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
