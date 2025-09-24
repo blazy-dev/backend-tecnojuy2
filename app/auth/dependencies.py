@@ -88,43 +88,33 @@ def get_current_user_optional(
     db: Session = Depends(get_db)
 ) -> Optional[User]:
     """Obtener usuario actual opcionalmente (sin lanzar error si no está autenticado)"""
-    print(f"[DEBUG] get_current_user_optional called")
-    
     # Intentar obtener token de cookie primero
     token = access_token
-    print(f"[DEBUG] access_token from Cookie: {token}")
     
     # Si no hay cookie, intentar obtener de Authorization header
     if not token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header[7:]  # Remover "Bearer "
-            print(f"[DEBUG] access_token from Authorization header: {token[:50]}...")
-    
-    print(f"[DEBUG] request.cookies: {dict(request.cookies)}")
     
     if not token:
         return None
     
     try:
         # Verificar token
-        print(f"[DEBUG] Trying to verify access token: {token[:50]}...")
         payload = verify_token(token, "access")
         user_id = payload.get("sub")
-        print(f"[DEBUG] Token verified, user_id: {user_id}")
         
         if not user_id:
             return None
         
         # Buscar usuario en base de datos
         user = db.query(User).filter(User.id == user_id).first()
-        print(f"[DEBUG] User found: {user}")
         if not user or not user.is_active:
             return None
         
         return user
-    except Exception as e:
+    except Exception:
         # Si hay cualquier error en la verificación, simplemente devolver None
-        print(f"[DEBUG] Exception in get_current_user_optional: {e}")
         return None
 

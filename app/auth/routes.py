@@ -70,98 +70,11 @@ async def debug_cors(request: Request):
         "configured_frontend_origins": FRONTEND_ORIGINS,
     }
 
-@router.post("/init-roles")
-async def init_roles(db: Session = Depends(get_db)):
-    """
-    ENDPOINT TEMPORAL - Inicializar roles básicos en producción
-    ELIMINAR después de usar
-    """
-    try:
-        roles_created = []
-        
-        # Crear rol admin si no existe
-        admin_role = db.query(Role).filter(Role.name == "admin").first()
-        if not admin_role:
-            admin_role = Role(
-                name="admin",
-                description="Administrador del sistema con todos los permisos"
-            )
-            db.add(admin_role)
-            roles_created.append("admin")
-        
-        # Crear rol alumno si no existe
-        alumno_role = db.query(Role).filter(Role.name == "alumno").first()
-        if not alumno_role:
-            alumno_role = Role(
-                name="alumno",
-                description="Estudiante de la plataforma"
-            )
-            db.add(alumno_role)
-            roles_created.append("alumno")
-        
-        db.commit()
-        
-        # Listar todos los roles existentes
-        all_roles = db.query(Role).all()
-        
-        return {
-            "success": True,
-            "roles_created": roles_created,
-            "all_roles": [{"id": role.id, "name": role.name, "description": role.description} for role in all_roles],
-            "message": f"Roles inicializados. Creados: {', '.join(roles_created) if roles_created else 'ninguno (ya existían)'}"
-        }
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/make-admin/{user_email}")
-async def make_admin(user_email: str, db: Session = Depends(get_db)):
-    """
-    ENDPOINT TEMPORAL - Solo para hacer admin a tecno.juy.ar@gmail.com
-    ELIMINAR después de usar
-    """
-    # Solo permitir para el email específico de seguridad
-    if user_email != "tecno.juy.ar@gmail.com":
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    try:
-        # Buscar el usuario
-        user = db.query(User).filter(User.email == user_email).first()
-        if not user:
-            raise HTTPException(status_code=404, detail=f"User {user_email} not found")
-        
-        # Buscar el rol de administrador
-        admin_role = db.query(Role).filter(Role.name == "admin").first()
-        if not admin_role:
-            raise HTTPException(status_code=404, detail="Admin role not found. Run /auth/init-roles first")
-        
-        # Actualizar el rol del usuario
-        current_role = user.role.name if user.role else "No role"
-        user.role_id = admin_role.id
-        db.commit()
-        
-        return {
-            "success": True,
-            "message": f"User {user_email} is now admin",
-            "previous_role": current_role,
-            "new_role": "admin"
-        }
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/session")
 async def session(request: Request, current_user: User | None = Depends(get_current_user_optional), db: Session = Depends(get_db)):
     """Endpoint idempotente que devuelve 200 siempre.
     Sirve para que el frontend obtenga estado de sesión sin disparar 401 cuando el usuario es anónimo.
-    Updated: force deploy.
     """
-    print(f"[DEBUG] /auth/session called")
-    print(f"[DEBUG] Cookies received: {dict(request.cookies)}")
-    print(f"[DEBUG] current_user: {current_user}")
-    
     if not current_user:
         return {"authenticated": False}
     # Cargar rol completo
