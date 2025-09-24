@@ -27,6 +27,13 @@ class UserInfo(BaseModel):
     has_premium_access: bool
     role_name: str
 
+@router.get("/debug/cookies")
+async def debug_cookies(request: Request):
+    """Devuelve las cookies recibidas para depurar problemas de autenticación.
+    IMPORTANTE: No dejar este endpoint expuesto en producción final; eliminar cuando esté estable.
+    """
+    return {"cookies": dict(request.cookies)}
+
 @router.get("/google/login")
 async def google_login(request: Request):
     """Iniciar proceso de login con Google"""
@@ -111,6 +118,7 @@ async def google_callback(
 
         # Configurar cookies seguras
         response = RedirectResponse(url=f"{primary_frontend}/dashboard")
+        # Nota: path="/" explícito para claridad
         response.set_cookie(
             key="access_token",
             value=access_token,
