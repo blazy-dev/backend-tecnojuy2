@@ -4,7 +4,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseCall
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.requests import Request
 import asyncio
 import logging
@@ -22,7 +23,10 @@ from app.homepage.routes import router as homepage_router
 
 # Middleware para forzar HTTPS en producción
 class ForceHTTPSMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseCall):
+    def __init__(self, app: ASGIApp):
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):
         # Solo aplicar en entorno de producción (Railway lo setea)
         if os.getenv("RAILWAY_ENVIRONMENT") == "production":
             # Si la cabecera x-forwarded-proto no es https, redirigir
