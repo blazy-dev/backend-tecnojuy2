@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseCall
+from starlette.requests import Request
 import asyncio
 import logging
 import os
@@ -17,11 +20,27 @@ from app.courses.routes import router as courses_router
 from app.blog.routes import router as blog_router
 from app.homepage.routes import router as homepage_router
 
+# Middleware para forzar HTTPS en producción
+class ForceHTTPSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseCall):
+        # Solo aplicar en entorno de producción (Railway lo setea)
+        if os.getenv("RAILWAY_ENVIRONMENT") == "production":
+            # Si la cabecera x-forwarded-proto no es https, redirigir
+            if request.headers.get("x-forwarded-proto") != "https" and not request.url.path.startswith("/health"):
+                url = request.url.replace(scheme="https")
+                return RedirectResponse(url=url, status_code=308)
+        
+        response = await call_next(request)
+        return response
+
 app = FastAPI(
     title="TecnoJuy API",
     description="API para plataforma educativa con autenticación y blog",
     version="1.0.0"
 )
+
+# HTTPS Redirect Middleware (debe ser el primero)
+app.add_middleware(ForceHTTPSMiddleware)
 
 # Session middleware (necesario para OAuth)
 app.add_middleware(
