@@ -174,7 +174,7 @@ async def delete_post(
     
     return {"message": "Post deleted successfully"}
 
-@router.get("/admin/all", response_model=List[PostSummary])
+@router.get("/admin/all/", response_model=List[PostSummary])
 async def get_all_posts_admin(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -206,7 +206,7 @@ async def get_all_posts_admin(
     
     return result
 
-@router.get("/admin/{post_id}", response_model=PostResponse)
+@router.get("/admin/{post_id}/", response_model=PostResponse)
 async def get_post_admin(
     post_id: int,
     current_user: User = Depends(require_admin),

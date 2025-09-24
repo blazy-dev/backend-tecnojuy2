@@ -87,7 +87,7 @@ async def update_current_user_profile(
         updated_at=user_with_role.updated_at
     )
 
-@router.get("/admin/stats")
+@router.get("/admin/stats/")
 async def get_users_stats(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
