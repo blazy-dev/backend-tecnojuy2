@@ -166,7 +166,15 @@ class R2Service:
                 return False, f"ClientError {code}: {msg}"
 
             logger.info("R2 public upload OK: %s", object_key)
-            return True, None
+            
+            # Construir URL pública del archivo
+            if self.public_bucket_url:
+                public_url = f"{self.public_bucket_url.rstrip('/')}/{object_key}"
+            else:
+                # Fallback si no hay URL personalizada configurada
+                public_url = f"https://{self.public_bucket_name}.r2.dev/{object_key}"
+            
+            return True, public_url
 
         except Exception as e:
             logger.exception("Unexpected error uploading to public R2 bucket for key=%s", object_key)

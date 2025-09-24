@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.db.models import HomepageContent, HomepageGallery, User
 from app.auth.dependencies import require_admin
 from app.homepage.service import homepage_service
+from app.core.config import settings
 from app.homepage.schemas import (
     HomepageContentCreate, HomepageContentUpdate, HomepageContentResponse,
     HomepageGalleryCreate, HomepageGalleryUpdate, HomepageGalleryResponse,
@@ -60,6 +61,23 @@ async def get_gallery(
     return [HomepageGalleryResponse.from_orm(g) for g in gallery]
 
 # ===== ENDPOINTS DE ADMINISTRACIÓN =====
+
+@router.get("/admin/debug-r2")
+async def debug_r2_config(
+    _: dict = Depends(require_admin)
+):
+    """Debug R2 configuration - TEMPORARY ENDPOINT"""
+    return {
+        "r2_enabled": r2_service.enabled,
+        "has_client": r2_service.client is not None,
+        "bucket_name": r2_service.bucket_name,
+        "public_url": r2_service.public_url,
+        "public_bucket_name": r2_service.public_bucket_name,
+        "public_bucket_url": r2_service.public_bucket_url,
+        "has_endpoint": bool(settings.R2_ENDPOINT_URL),
+        "has_access_key": bool(settings.R2_ACCESS_KEY_ID),
+        "has_secret_key": bool(settings.R2_SECRET_ACCESS_KEY),
+    }
 
 @router.get("/admin/content", response_model=List[HomepageContentResponse])
 async def get_all_content_admin(
