@@ -10,6 +10,7 @@ from app.core.security import create_access_token, create_refresh_token, verify_
 from app.core.config import settings, FRONTEND_ORIGINS
 from app.auth.google import oauth, get_google_user_info
 from app.auth.dependencies import get_current_user
+from app.core.security import verify_token
 
 router = APIRouter()
 
@@ -33,6 +34,29 @@ async def debug_cookies(request: Request):
     IMPORTANTE: No dejar este endpoint expuesto en producción final; eliminar cuando esté estable.
     """
     return {"cookies": dict(request.cookies)}
+
+@router.get("/session-info")
+async def session_info(request: Request):
+    """Devuelve información básica de los tokens (sin requerir DB) para depurar 401.
+    Si el token de acceso no es válido intenta inspeccionar el refresh.
+    """
+    access_cookie = request.cookies.get("access_token")
+    refresh_cookie = request.cookies.get("refresh_token")
+    info = {
+        "has_access_cookie": bool(access_cookie),
+        "has_refresh_cookie": bool(refresh_cookie)
+    }
+    try:
+        if access_cookie:
+            info["access_claims"] = verify_token(access_cookie, "access")
+    except Exception as e:
+        info["access_error"] = str(e)
+    try:
+        if refresh_cookie:
+            info["refresh_claims"] = verify_token(refresh_cookie, "refresh")
+    except Exception as e:
+        info["refresh_error"] = str(e)
+    return info
 
 @router.get("/google/login")
 async def google_login(request: Request):
