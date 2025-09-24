@@ -71,11 +71,15 @@ async def debug_cors(request: Request):
     }
 
 @router.get("/session")
-async def session(current_user: User | None = Depends(get_current_user_optional), db: Session = Depends(get_db)):
+async def session(request: Request, current_user: User | None = Depends(get_current_user_optional), db: Session = Depends(get_db)):
     """Endpoint idempotente que devuelve 200 siempre.
     Sirve para que el frontend obtenga estado de sesión sin disparar 401 cuando el usuario es anónimo.
     Updated: force deploy.
     """
+    print(f"[DEBUG] /auth/session called")
+    print(f"[DEBUG] Cookies received: {dict(request.cookies)}")
+    print(f"[DEBUG] current_user: {current_user}")
+    
     if not current_user:
         return {"authenticated": False}
     # Cargar rol completo
