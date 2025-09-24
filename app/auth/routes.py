@@ -10,6 +10,7 @@ from app.core.security import create_access_token, create_refresh_token, verify_
 from app.core.config import settings, FRONTEND_ORIGINS
 from app.auth.google import oauth, get_google_user_info
 from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user_optional
 from app.core.security import verify_token
 from app.core.config import FRONTEND_ORIGINS
 
@@ -67,6 +68,28 @@ async def debug_cors(request: Request):
         "request_origin": origin,
         "request_host": host,
         "configured_frontend_origins": FRONTEND_ORIGINS,
+    }
+
+@router.get("/session")
+async def session(current_user: User | None = Depends(get_current_user_optional), db: Session = Depends(get_db)):
+    """Endpoint idempotente que devuelve 200 siempre.
+    Sirve para que el frontend obtenga estado de sesión sin disparar 401 cuando el usuario es anónimo.
+    Updated: force deploy.
+    """
+    if not current_user:
+        return {"authenticated": False}
+    # Cargar rol completo
+    user_with_role = db.query(User).join(Role).filter(User.id == current_user.id).first()
+    return {
+        "authenticated": True,
+        "user": {
+            "id": user_with_role.id,
+            "email": user_with_role.email,
+            "name": user_with_role.name,
+            "avatar_url": user_with_role.avatar_url,
+            "has_premium_access": user_with_role.has_premium_access,
+            "role_name": user_with_role.role.name if user_with_role.role else None
+        }
     }
 
 @router.get("/google/login")
