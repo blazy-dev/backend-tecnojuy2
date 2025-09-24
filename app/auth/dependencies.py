@@ -12,14 +12,23 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     """Obtener usuario actual desde el token JWT"""
-    if not access_token:
+    # Intentar obtener token de cookie primero
+    token = access_token
+    
+    # Si no hay cookie, intentar obtener de Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remover "Bearer "
+    
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No access token provided"
         )
     
     # Verificar token
-    payload = verify_token(access_token, "access")
+    payload = verify_token(token, "access")
     user_id = payload.get("sub")
     
     if not user_id:
@@ -80,16 +89,27 @@ def get_current_user_optional(
 ) -> Optional[User]:
     """Obtener usuario actual opcionalmente (sin lanzar error si no está autenticado)"""
     print(f"[DEBUG] get_current_user_optional called")
-    print(f"[DEBUG] access_token from Cookie: {access_token}")
+    
+    # Intentar obtener token de cookie primero
+    token = access_token
+    print(f"[DEBUG] access_token from Cookie: {token}")
+    
+    # Si no hay cookie, intentar obtener de Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remover "Bearer "
+            print(f"[DEBUG] access_token from Authorization header: {token[:50]}...")
+    
     print(f"[DEBUG] request.cookies: {dict(request.cookies)}")
     
-    if not access_token:
+    if not token:
         return None
     
     try:
         # Verificar token
-        print(f"[DEBUG] Trying to verify access token: {access_token[:50]}...")
-        payload = verify_token(access_token, "access")
+        print(f"[DEBUG] Trying to verify access token: {token[:50]}...")
+        payload = verify_token(token, "access")
         user_id = payload.get("sub")
         print(f"[DEBUG] Token verified, user_id: {user_id}")
         

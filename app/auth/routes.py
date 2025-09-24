@@ -174,31 +174,16 @@ async def google_callback(
         # Dominio principal: primer origen configurado
         primary_frontend = FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS else settings.FRONTEND_URL.rstrip('/')
 
-        is_prod = settings.ENV == "production"
-        cookie_secure = is_prod  # solo secure con HTTPS
-        same_site = "none" if is_prod else "lax"  # none para permitir third-party / subdominios
-
-        # Configurar cookies seguras
-        response = RedirectResponse(url=f"{primary_frontend}/dashboard")
-        # Nota: path="/" explícito para claridad
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=same_site,
-            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        )
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=same_site,
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-        )
+        # En lugar de cookies, vamos a devolver los tokens para que el frontend los maneje
+        redirect_url = f"{primary_frontend}/auth-success"
+        redirect_response = RedirectResponse(url=redirect_url)
         
-        return response
+        # Devolver tokens como query parameters para que el frontend los capture
+        # IMPORTANTE: Solo hacer esto en HTTPS, nunca en HTTP production
+        token_params = f"?access_token={access_token}&refresh_token={refresh_token}"
+        final_redirect = f"{primary_frontend}/auth-success{token_params}"
+        
+        return RedirectResponse(url=final_redirect)
         
     except Exception as e:
         raise HTTPException(
