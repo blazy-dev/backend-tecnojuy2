@@ -158,37 +158,35 @@ async def upload_homepage_image(
     file: UploadFile = File(...),
     _: dict = Depends(require_admin)
 ):
-    """Subir imagen para el homepage"""
+    """Subir imagen para el homepage usando R2"""
     try:
         # Validar tipo de archivo
         if not file.content_type or not file.content_type.startswith('image/'):
             raise HTTPException(status_code=400, detail="Solo se permiten archivos de imagen")
         
-        # Generar nombre único
+        # Generar nombre único para R2
         import uuid
-        import os
-        import shutil
-        from pathlib import Path
-        
         file_extension = file.filename.split('.')[-1] if file.filename and '.' in file.filename else 'jpg'
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        object_key = f"homepage/{unique_filename}"
         
-        # Crear directorio si no existe
-        uploads_dir = Path("static/uploads")
-        uploads_dir.mkdir(parents=True, exist_ok=True)
+        # Leer el contenido del archivo
+        content = await file.read()
         
-        # Guardar archivo
-        file_path = uploads_dir / unique_filename
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Subir a R2
+        success, public_url = await r2_service.upload_file_to_public_bucket(
+            object_key=object_key,
+            content=content,
+            content_type=file.content_type
+        )
         
-        # URL del archivo (serviremos los archivos estáticos)
-        file_url = f"http://localhost:8000/static/uploads/{unique_filename}"
+        if not success or not public_url:
+            raise HTTPException(status_code=500, detail="Error al subir imagen a R2")
         
         return {
             "success": True,
-            "object_key": f"homepage/{unique_filename}",
-            "url": file_url,
+            "object_key": object_key,
+            "url": public_url,
             "message": "Imagen subida exitosamente"
         }
             
