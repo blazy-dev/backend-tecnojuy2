@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+@router.get("/debug-r2-public")
+async def debug_r2_config_public():
+    """Debug R2 configuration - PUBLIC ENDPOINT - TEMPORARY"""
+    from app.core.config import settings
+    return {
+        "r2_enabled": r2_service.enabled,
+        "has_client": r2_service.client is not None,
+        "bucket_name": bool(r2_service.bucket_name),
+        "public_url": bool(r2_service.public_url),
+        "public_bucket_name": bool(r2_service.public_bucket_name),
+        "public_bucket_url": bool(r2_service.public_bucket_url),
+        "has_endpoint": bool(settings.R2_ENDPOINT_URL),
+        "has_access_key": bool(settings.R2_ACCESS_KEY_ID),
+        "has_secret_key": bool(settings.R2_SECRET_ACCESS_KEY),
+        # Mostrar solo los primeros/últimos caracteres para debug
+        "endpoint_preview": settings.R2_ENDPOINT_URL[:20] + "..." + settings.R2_ENDPOINT_URL[-10:] if settings.R2_ENDPOINT_URL else None,
+        "bucket_preview": r2_service.bucket_name if r2_service.bucket_name else None,
+        "public_bucket_preview": r2_service.public_bucket_name if r2_service.public_bucket_name else None,
+    }
+
 # ===== ENDPOINTS PÚBLICOS =====
 
 @router.get("/", response_model=HomepageData)
