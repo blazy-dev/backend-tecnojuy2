@@ -70,6 +70,37 @@ settings.DATABASE_URL = _resolve_database_url() or settings.DATABASE_URL
 
 def get_frontend_origins() -> list[str]:
     raw = settings.FRONTEND_URL or ""
-    return [p.strip().rstrip('/') for p in raw.split(',') if p.strip()]
+    origins: list[str] = []
+    for part in raw.split(','):
+        p = part.strip()
+        if not p:
+            continue
+        # Si el usuario pegó accidentalmente 'FRONTEND_URL=https://dominio' dentro del valor:
+        if p.lower().startswith('frontend_url='):
+            p = p.split('=', 1)[1].strip()
+        p = p.rstrip('/')
+        origins.append(p)
+    # Añadir variante www si no está y el dominio es raíz (ej: https://tecnojuy.com)
+    augmented: list[str] = []
+    for o in origins:
+        augmented.append(o)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(o)
+            host = parsed.hostname or ""
+            if host.count('.') == 1 and not host.startswith('www.'):
+                www_variant = o.replace('://', '://www.')
+                if www_variant not in origins and www_variant not in augmented:
+                    augmented.append(www_variant)
+        except Exception:
+            pass
+    # Eliminar duplicados preservando orden
+    seen = set()
+    result = []
+    for o in augmented:
+        if o not in seen:
+            seen.add(o)
+            result.append(o)
+    return result
 
 FRONTEND_ORIGINS = get_frontend_origins()

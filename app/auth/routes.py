@@ -11,6 +11,7 @@ from app.core.config import settings, FRONTEND_ORIGINS
 from app.auth.google import oauth, get_google_user_info
 from app.auth.dependencies import get_current_user
 from app.core.security import verify_token
+from app.core.config import FRONTEND_ORIGINS
 
 router = APIRouter()
 
@@ -57,6 +58,16 @@ async def session_info(request: Request):
     except Exception as e:
         info["refresh_error"] = str(e)
     return info
+
+@router.get("/debug/cors")
+async def debug_cors(request: Request):
+    origin = request.headers.get("origin") or request.headers.get("Origin")
+    host = request.headers.get("host")
+    return {
+        "request_origin": origin,
+        "request_host": host,
+        "configured_frontend_origins": FRONTEND_ORIGINS,
+    }
 
 @router.get("/google/login")
 async def google_login(request: Request):
