@@ -10,6 +10,29 @@ from app.db.models import User
 
 router = APIRouter()
 
+@router.get("/debug-users-public")
+async def debug_users_public(db: Session = Depends(get_db)):
+    """Debug users - PUBLIC ENDPOINT - TEMPORARY"""
+    from app.db.models import Role
+    
+    total_users = db.query(User).count()
+    users = db.query(User).join(Role).limit(5).all()
+    
+    return {
+        "total_users": total_users,
+        "users_sample": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email[:10] + "...",  # Truncar email por privacidad
+                "role_name": u.role.name if u.role else "No role",
+                "is_active": u.is_active,
+                "has_premium_access": u.has_premium_access,
+                "created_at": u.created_at.isoformat() if u.created_at else None
+            } for u in users
+        ]
+    }
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
     current_user: User = Depends(get_current_user),
@@ -63,6 +86,23 @@ async def update_current_user_profile(
         created_at=user_with_role.created_at,
         updated_at=user_with_role.updated_at
     )
+
+@router.get("/admin/stats")
+async def get_users_stats(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Obtener estadísticas de usuarios para el dashboard admin"""
+    total_users = db.query(User).count()
+    active_users = db.query(User).filter(User.is_active == True).count()
+    premium_users = db.query(User).filter(User.has_premium_access == True).count()
+    
+    return {
+        "total_users": total_users,
+        "active_users": active_users,
+        "premium_users": premium_users,
+        "inactive_users": total_users - active_users
+    }
 
 @router.get("/", response_model=List[UserResponse])
 async def get_users(
