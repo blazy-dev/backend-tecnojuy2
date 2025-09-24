@@ -70,6 +70,43 @@ async def debug_cors(request: Request):
         "configured_frontend_origins": FRONTEND_ORIGINS,
     }
 
+@router.post("/make-admin/{user_email}")
+async def make_admin(user_email: str, db: Session = Depends(get_db)):
+    """
+    ENDPOINT TEMPORAL - Solo para hacer admin a tecno.juy.ar@gmail.com
+    ELIMINAR después de usar
+    """
+    # Solo permitir para el email específico de seguridad
+    if user_email != "tecno.juy.ar@gmail.com":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        # Buscar el usuario
+        user = db.query(User).filter(User.email == user_email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User {user_email} not found")
+        
+        # Buscar el rol de administrador
+        admin_role = db.query(Role).filter(Role.name == "admin").first()
+        if not admin_role:
+            raise HTTPException(status_code=404, detail="Admin role not found")
+        
+        # Actualizar el rol del usuario
+        current_role = user.role.name if user.role else "No role"
+        user.role_id = admin_role.id
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"User {user_email} is now admin",
+            "previous_role": current_role,
+            "new_role": "admin"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/session")
 async def session(request: Request, current_user: User | None = Depends(get_current_user_optional), db: Session = Depends(get_db)):
     """Endpoint idempotente que devuelve 200 siempre.
