@@ -32,6 +32,10 @@ class ChapterUpdate(BaseModel):
     order_index: Optional[int] = None
     is_published: Optional[bool] = None
 
+
+class ChapterReorderRequest(BaseModel):
+    chapter_ids: List[int]
+
 class LessonBase(BaseModel):
     title: str
     description: Optional[str] = None

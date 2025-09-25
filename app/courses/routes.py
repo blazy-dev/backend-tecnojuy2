@@ -9,7 +9,7 @@ from app.auth.dependencies import get_current_user, require_admin, get_current_u
 from app.courses.service import course_service
 from app.courses.schemas import (
     CourseCreate, CourseUpdate, CourseResponse, CourseListResponse,
-    ChapterCreate, ChapterUpdate, ChapterResponse,
+    ChapterCreate, ChapterUpdate, ChapterResponse, ChapterReorderRequest,
     LessonCreate, LessonUpdate, LessonResponse,
     LessonProgressUpdate, LessonProgressResponse,
     VideoUrlResponse, FileUploadResponse
@@ -1128,6 +1128,98 @@ async def create_chapter_admin(
             "course_id": chapter.course_id,
             "lessons": []
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/admin/chapters/{chapter_id}/")
+async def update_chapter_admin(
+    chapter_id: int,
+    chapter_data: ChapterUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Actualizar un capítulo existente"""
+    try:
+        chapter = course_service.update_chapter(db, chapter_id, chapter_data)
+        if not chapter:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+
+        lessons = db.query(Lesson).filter(
+            Lesson.chapter_id == chapter.id
+        ).order_by(Lesson.order_index).all()
+
+        return {
+            "id": chapter.id,
+            "title": chapter.title,
+            "description": chapter.description,
+            "order_index": chapter.order_index,
+            "is_published": chapter.is_published,
+            "course_id": chapter.course_id,
+            "lessons": [
+                {
+                    "id": lesson.id,
+                    "title": lesson.title,
+                    "description": lesson.description,
+                    "content_type": lesson.content_type,
+                    "video_url": lesson.video_url,
+                    "video_duration_seconds": lesson.video_duration_seconds,
+                    "file_url": lesson.file_url,
+                    "file_type": lesson.file_type,
+                    "file_size_bytes": lesson.file_size_bytes,
+                    "text_content": lesson.text_content,
+                    "order_index": lesson.order_index,
+                    "estimated_duration_minutes": lesson.estimated_duration_minutes,
+                    "is_published": lesson.is_published,
+                    "is_free": lesson.is_free,
+                    "can_download": lesson.can_download,
+                    "chapter_id": lesson.chapter_id,
+                    "course_id": lesson.course_id
+                } for lesson in lessons
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/admin/chapters/{chapter_id}/")
+async def delete_chapter_admin(
+    chapter_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Eliminar un capítulo y sus lecciones asociadas"""
+    try:
+        ok = course_service.delete_chapter(db, chapter_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+        return {"message": "Chapter deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/admin/courses/{course_id}/chapters/reorder/")
+async def reorder_chapters_admin(
+    course_id: int,
+    payload: ChapterReorderRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Actualizar el orden de los capítulos de un curso"""
+    try:
+        updated_chapters = course_service.reorder_chapters(db, course_id, payload.chapter_ids)
+        return {
+            "message": "Chapters reordered",
+            "chapters": [
+                {
+                    "id": chapter.id,
+                    "order_index": chapter.order_index
+                } for chapter in sorted(updated_chapters, key=lambda ch: ch.order_index)
+            ]
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
