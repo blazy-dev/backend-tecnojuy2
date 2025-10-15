@@ -36,6 +36,9 @@ class ChapterUpdate(BaseModel):
 class ChapterReorderRequest(BaseModel):
     chapter_ids: List[int]
 
+class LessonReorderRequest(BaseModel):
+    lesson_ids: List[int]
+
 class LessonBase(BaseModel):
     title: str
     description: Optional[str] = None

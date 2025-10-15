@@ -10,7 +10,7 @@ from app.courses.service import course_service
 from app.courses.schemas import (
     CourseCreate, CourseUpdate, CourseResponse, CourseListResponse,
     ChapterCreate, ChapterUpdate, ChapterResponse, ChapterReorderRequest,
-    LessonCreate, LessonUpdate, LessonResponse,
+    LessonCreate, LessonUpdate, LessonResponse, LessonReorderRequest,
     LessonProgressUpdate, LessonProgressResponse,
     VideoUrlResponse, FileUploadResponse
 )
@@ -1216,6 +1216,30 @@ async def reorder_chapters_admin(
                     "id": chapter.id,
                     "order_index": chapter.order_index
                 } for chapter in sorted(updated_chapters, key=lambda ch: ch.order_index)
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/admin/chapters/{chapter_id}/lessons/reorder/")
+async def reorder_lessons_admin(
+    chapter_id: int,
+    payload: LessonReorderRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Actualizar el orden de las lecciones de un capítulo"""
+    try:
+        updated_lessons = course_service.reorder_lessons(db, chapter_id, payload.lesson_ids)
+        return {
+            "message": "Lessons reordered",
+            "lessons": [
+                {
+                    "id": lesson.id,
+                    "order_index": lesson.order_index
+                } for lesson in sorted(updated_lessons, key=lambda l: l.order_index)
             ]
         }
     except HTTPException:

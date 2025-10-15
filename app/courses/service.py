@@ -490,6 +490,52 @@ class CourseService:
         return True
 
     @staticmethod
+    def reorder_chapters(db: Session, course_id: int, chapter_ids: List[int]) -> List[Chapter]:
+        """Actualizar el orden de los capítulos de un curso"""
+        chapters = db.query(Chapter).filter(Chapter.course_id == course_id).order_by(Chapter.order_index).all()
+        if not chapters:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found or has no chapters")
+
+        existing_ids = [chapter.id for chapter in chapters]
+        if sorted(existing_ids) != sorted(chapter_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chapter IDs do not match course chapters")
+
+        chapter_map = {chapter.id: chapter for chapter in chapters}
+        for position, chapter_id in enumerate(chapter_ids, start=1):
+            chapter = chapter_map.get(chapter_id)
+            if chapter is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Chapter {chapter_id} does not belong to course")
+            chapter.order_index = position
+            chapter.updated_at = datetime.utcnow()
+
+        db.commit()
+
+        return db.query(Chapter).filter(Chapter.course_id == course_id).order_by(Chapter.order_index).all()
+
+    @staticmethod
+    def reorder_lessons(db: Session, chapter_id: int, lesson_ids: List[int]) -> List[Lesson]:
+        """Actualizar el orden de las lecciones de un capítulo"""
+        lessons = db.query(Lesson).filter(Lesson.chapter_id == chapter_id).order_by(Lesson.order_index).all()
+        if not lessons:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter not found or has no lessons")
+
+        existing_ids = [lesson.id for lesson in lessons]
+        if sorted(existing_ids) != sorted(lesson_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Lesson IDs do not match chapter lessons")
+
+        lesson_map = {lesson.id: lesson for lesson in lessons}
+        for position, lesson_id in enumerate(lesson_ids, start=1):
+            lesson = lesson_map.get(lesson_id)
+            if lesson is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Lesson {lesson_id} does not belong to chapter")
+            lesson.order_index = position
+            lesson.updated_at = datetime.utcnow()
+
+        db.commit()
+
+        return db.query(Lesson).filter(Lesson.chapter_id == chapter_id).order_by(Lesson.order_index).all()
+
+    @staticmethod
     def delete_lesson(db: Session, lesson_id: int) -> bool:
         """Eliminar una lección"""
         lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
