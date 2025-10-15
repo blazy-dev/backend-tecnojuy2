@@ -148,9 +148,14 @@ async def proxy_upload(
 ):
     """
     Proxy upload: El frontend envía el archivo al backend,
-    el backend lo sube a R2 y devuelve la URL pública
+    el backend lo sube a R2 y devuelve la URL pública.
+    Optimizado para archivos grandes con mejor logging.
     """
     try:
+        # Validar tamaño del archivo (500MB máximo)
+        MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
+        file_size = 0
+        
         # Generar nombre único para el archivo
         from datetime import datetime
         import uuid
@@ -160,18 +165,41 @@ async def proxy_upload(
         file_extension = file.filename.split('.')[-1] if '.' in file.filename else ''
         object_key = f"{folder}/{timestamp}_{unique_id}.{file_extension}"
         
-        # Leer contenido del archivo
-        content = await file.read()
+        print(f"🚀 Starting upload for {file.filename} -> {object_key}")
+        
+        # Leer contenido del archivo en chunks para archivos grandes
+        content = bytearray()
+        chunk_size = 8192  # 8KB chunks
+        
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            content.extend(chunk)
+            file_size += len(chunk)
+            
+            # Verificar límite de tamaño
+            if file_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=413, 
+                    detail=f"Archivo muy grande. Máximo permitido: {MAX_FILE_SIZE // 1024 // 1024}MB"
+                )
+        
+        print(f"📁 File read complete: {file_size / 1024 / 1024:.1f}MB")
         
         # Subir directamente a R2 usando el servicio
+        print(f"☁️ Uploading to R2...")
         success, error_message = await r2_service.upload_file_direct(
             object_key=object_key,
-            content=content,
-            content_type=file.content_type
+            content=bytes(content),
+            content_type=file.content_type or 'application/octet-stream'
         )
         
         if not success:
+            print(f"❌ R2 upload failed: {error_message}")
             raise HTTPException(status_code=500, detail=f"Failed to upload file to R2: {error_message}")
+        
+        print(f"✅ R2 upload successful: {object_key}")
         
         # Generar URL firmada (presigned) con larga duración para portadas
         presigned_url = r2_service.generate_presigned_get_url(object_key, expiration=86400*7)  # 7 días
@@ -181,8 +209,11 @@ async def proxy_upload(
             "object_key": object_key,
             "filename": f"{timestamp}_{unique_id}.{file_extension}",
             "content_type": file.content_type,
-            "size": len(content)
+            "size": file_size
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
