@@ -1020,6 +1020,7 @@ async def get_admin_courses_list(
         response.append(CourseListResponse(
             id=course.id,
             title=course.title,
+            description=course.description,
             short_description=course.short_description,
             cover_image_url=get_safe_cover_url(course.cover_image_url),
             level=course.level or "Beginner",

@@ -163,6 +163,7 @@ class CourseResponse(CourseBase):
 class CourseListResponse(BaseModel):
     id: int
     title: str
+    description: Optional[str] = None
     short_description: Optional[str] = None
     cover_image_url: Optional[str] = None
     level: str
