@@ -128,15 +128,20 @@ class R2Service:
             raise Exception(f"Error generating presigned GET URL: {str(e)}")
 
     def generate_public_presigned_put_url(self, object_key: str, content_type: str, expiration: int = 3600) -> str:
-        """Generar URL firmada para subir un archivo directamente al bucket PÚBLICO"""
+        """
+        Generar URL firmada para subir un archivo directamente al bucket PÚBLICO.
+        NO incluye Content-Type en la firma para evitar CORS preflight.
+        """
         try:
             self._require_client()
+            # NO incluir ContentType en Params para evitar que sea parte de SignedHeaders
+            # Esto previene CORS preflight al hacer PUT desde el browser
             return self.client.generate_presigned_url(
                 'put_object',
                 Params={
                     'Bucket': self.public_bucket_name,
                     'Key': object_key,
-                    'ContentType': content_type
+                    # ContentType se puede setear en el PUT sin estar en la firma
                 },
                 ExpiresIn=expiration
             )
