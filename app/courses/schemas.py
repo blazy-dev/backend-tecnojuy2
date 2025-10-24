@@ -166,6 +166,7 @@ class CourseListResponse(BaseModel):
     description: Optional[str] = None
     short_description: Optional[str] = None
     cover_image_url: Optional[str] = None
+    trailer_video_url: Optional[str] = None  # Video de presentación del curso
     level: str
     language: str
     category: Optional[str] = None

@@ -48,6 +48,18 @@ def get_safe_cover_url(cover_url: str | None) -> str | None:
     
     return cover_url
 
+def get_safe_trailer_url(trailer_url: str | None) -> str | None:
+    """
+    Retorna la URL del trailer del curso.
+    Los trailers deben estar en el bucket PÚBLICO para que se puedan ver sin autenticación.
+    """
+    if not trailer_url:
+        return None
+    
+    # Si es una URL pública de R2, devolverla directamente
+    # No generamos URL firmada porque los trailers deben ser públicos
+    return trailer_url
+
 # Esquemas específicos para esta ruta
 class AccessGrantRequest(BaseModel):
     user_id: int
@@ -118,6 +130,7 @@ async def get_available_courses(
             title=course.title,
             short_description=course.short_description,
             cover_image_url=get_safe_cover_url(course.cover_image_url),
+            trailer_video_url=get_safe_trailer_url(course.trailer_video_url),
             level=course.level or "Beginner",
             language=course.language or "Español",
             category=course.category,
@@ -178,6 +191,7 @@ async def get_my_courses(
             title=course.title,
             short_description=course.short_description,
             cover_image_url=get_safe_cover_url(course.cover_image_url),
+            trailer_video_url=get_safe_trailer_url(course.trailer_video_url),
             level=course.level or "Beginner",
             language=course.language or "Español",
             category=course.category,
@@ -241,6 +255,7 @@ async def get_my_courses_all(
                 title=course.title,
                 short_description=course.short_description,
                 cover_image_url=get_safe_cover_url(course.cover_image_url),
+                trailer_video_url=get_safe_trailer_url(course.trailer_video_url),
                 level=course.level or "Beginner",
                 language=course.language or "Español",
                 category=course.category,
@@ -319,7 +334,8 @@ async def get_course_structure_public(
             "language": course.language,
             "category": course.category,
             "estimated_duration_hours": course.estimated_duration_hours,
-            "cover_image_url": get_safe_cover_url(course.cover_image_url)
+            "cover_image_url": get_safe_cover_url(course.cover_image_url),
+            "trailer_video_url": get_safe_trailer_url(course.trailer_video_url)
         },
         "chapters": result
     }
@@ -403,6 +419,7 @@ async def get_course_structure_with_access(
             "category": course.category,
             "estimated_duration_hours": course.estimated_duration_hours,
             "cover_image_url": get_safe_cover_url(course.cover_image_url),
+            "trailer_video_url": get_safe_trailer_url(course.trailer_video_url),
             "has_access": has_course_access
         },
         "chapters": result
@@ -411,10 +428,14 @@ async def get_course_structure_with_access(
 @router.get("/lessons/{lesson_id}/content")
 async def get_lesson_content(
     lesson_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
-    """Obtener contenido de una lección específica (requiere acceso)"""
+    """
+    Obtener contenido de una lección específica.
+    - Lecciones gratuitas (is_free=True): NO requieren autenticación
+    - Lecciones premium: requieren autenticación y acceso al curso
+    """
     lesson = db.query(Lesson).filter(
         Lesson.id == lesson_id,
         Lesson.is_published == True
@@ -423,15 +444,26 @@ async def get_lesson_content(
     if not lesson:
         raise HTTPException(status_code=404, detail="Lección no encontrada")
     
-    # Verificar acceso al curso
-    has_access = course_service.check_user_access(db, current_user.id, lesson.course_id)
-    
-    # Permitir acceso si es admin, la lección es gratuita, o el usuario tiene acceso al curso
-    if not (current_user.role.name == 'admin' or lesson.is_free or has_access):
+    # Si la lección es gratuita, permitir acceso sin autenticación
+    if lesson.is_free:
+        has_access = True
+    # Si el usuario no está autenticado y la lección NO es gratuita, denegar acceso
+    elif not current_user:
         raise HTTPException(
-            status_code=403,
-            detail="No tienes acceso a esta lección. Contacta al administrador."
+            status_code=401,
+            detail="Debes iniciar sesión para acceder a esta lección"
         )
+    # Si está autenticado, verificar permisos
+    else:
+        # Verificar acceso al curso
+        has_access = course_service.check_user_access(db, current_user.id, lesson.course_id)
+        
+        # Permitir acceso si es admin o tiene acceso al curso
+        if not (current_user.role.name == 'admin' or has_access):
+            raise HTTPException(
+                status_code=403,
+                detail="No tienes acceso a esta lección. Contacta al administrador."
+            )
     
     # Generar URLs firmadas para archivos con 1 hora de duración
     def get_signed_url(url: str | None) -> str | None:
@@ -1084,6 +1116,7 @@ async def get_admin_courses_list(
             description=course.description,
             short_description=course.short_description,
             cover_image_url=get_safe_cover_url(course.cover_image_url),
+            trailer_video_url=get_safe_trailer_url(course.trailer_video_url),
             level=course.level or "Beginner",
             language=course.language or "Español",
             category=course.category,
