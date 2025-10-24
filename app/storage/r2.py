@@ -127,6 +127,30 @@ class R2Service:
         except ClientError as e:
             raise Exception(f"Error generating presigned GET URL: {str(e)}")
 
+    def generate_public_presigned_put_url(self, object_key: str, content_type: str, expiration: int = 3600) -> str:
+        """Generar URL firmada para subir un archivo directamente al bucket PÚBLICO"""
+        try:
+            self._require_client()
+            return self.client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': self.public_bucket_name,
+                    'Key': object_key,
+                    'ContentType': content_type
+                },
+                ExpiresIn=expiration
+            )
+        except ClientError as e:
+            raise Exception(f"Error generating presigned PUT URL for public bucket: {str(e)}")
+
+    def get_public_object_url(self, object_key: str) -> str:
+        """Obtener URL pública del objeto en el bucket público"""
+        if self.public_bucket_url:
+            return f"{self.public_bucket_url.rstrip('/')}/{object_key}"
+        else:
+            # Fallback si no hay URL personalizada configurada
+            return f"https://{self.public_bucket_name}.r2.dev/{object_key}"
+
     async def upload_file_to_public_bucket(self, object_key: str, content: bytes, content_type: str) -> tuple[bool, str | None]:
         """
         Subir archivo directamente al bucket público para contenido del blog
