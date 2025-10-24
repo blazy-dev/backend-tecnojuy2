@@ -20,23 +20,18 @@ from sqlalchemy import and_, func
 router = APIRouter()
 
 # Función auxiliar para generar URLs seguras de portadas
-def get_safe_cover_url(cover_image_url: str | None) -> str | None:
-    """Generar URL firmada para portada si es necesario"""
-    if not cover_image_url:
+def get_safe_cover_url(cover_url: str | None) -> str | None:
+    """Genera URL segura para la portada del curso con expiración de 1 hora"""
+    if not cover_url:
         return None
     
-    # Si ya es una URL firmada (contiene parámetros), devolverla tal como está
-    if "?" in cover_image_url and ("X-Amz-" in cover_image_url or "Expires=" in cover_image_url):
-        return cover_image_url
-    
-    # Si es una URL directa de R2, generar URL firmada
-    if cover_image_url.startswith("https://") and "r2.dev" in cover_image_url:
+    # Si es una URL de R2, generar URL firmada temporal
+    if cover_url.startswith("https://") and "r2.dev" in cover_url:
         try:
-            # Extraer object_key de la URL
             from urllib.parse import urlparse
             from app.core.config import settings
             
-            parsed_url = urlparse(cover_image_url)
+            parsed_url = urlparse(cover_url)
             object_key = parsed_url.path.lstrip('/')
             
             # Remover el nombre del bucket si está presente
@@ -44,13 +39,14 @@ def get_safe_cover_url(cover_image_url: str | None) -> str | None:
             if object_key.startswith(bucket_prefix):
                 object_key = object_key[len(bucket_prefix):]
             
-            # Generar URL firmada con 7 días de duración
-            return r2_service.generate_presigned_get_url(object_key, expiration=86400*7)
-        except Exception:
-            # Si hay error, devolver la URL original
-            return cover_image_url
+            # Generar URL firmada con 1 hora de duración (3600 segundos)
+            # Se regenera automáticamente cada vez que el usuario carga la lista de cursos
+            return r2_service.generate_presigned_get_url(object_key, expiration=3600)
+        except Exception as e:
+            print(f"Error generando URL firmada para cover: {e}")
+            return cover_url
     
-    return cover_image_url
+    return cover_url
 
 # Esquemas específicos para esta ruta
 class AccessGrantRequest(BaseModel):
@@ -437,17 +433,12 @@ async def get_lesson_content(
             detail="No tienes acceso a esta lección. Contacta al administrador."
         )
     
-    # Generar URLs firmadas para archivos
+    # Generar URLs firmadas para archivos con 1 hora de duración
     def get_signed_url(url: str | None) -> str | None:
         if not url:
             return None
         
-        # Si ya es una URL firmada, devolverla tal como está
-        if "?" in url and ("X-Amz-" in url or "Expires=" in url):
-            print(f"📌 URL ya firmada: {url[:100]}...")
-            return url
-        
-        # Si es una URL de R2, generar URL firmada
+        # Si es una URL de R2, generar URL firmada temporal
         if url.startswith("https://") and "r2.dev" in url:
             try:
                 from urllib.parse import urlparse
@@ -456,26 +447,20 @@ async def get_lesson_content(
                 parsed_url = urlparse(url)
                 object_key = parsed_url.path.lstrip('/')
                 
-                print(f"🔧 Procesando URL R2: {url}")
-                print(f"🔑 Object key extraído: {object_key}")
-                
                 # Remover el nombre del bucket si está presente
                 bucket_prefix = f"{settings.R2_BUCKET_NAME}/"
                 if object_key.startswith(bucket_prefix):
                     object_key = object_key[len(bucket_prefix):]
-                    print(f"🧹 Object key limpio: {object_key}")
                 
-                # Generar URL firmada con 4 horas de duración
-                signed_url = r2_service.generate_presigned_get_url(object_key, expiration=14400)
-                print(f"✅ URL firmada generada: {signed_url[:100]}...")
+                # Generar URL firmada con 1 hora de duración (3600 segundos)
+                # Suficiente para una sesión de visualización completa
+                signed_url = r2_service.generate_presigned_get_url(object_key, expiration=3600)
                 return signed_url
             except Exception as e:
-                print(f"❌ Error generando URL firmada para {url}: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"Error generando URL firmada para {url}: {e}")
                 return url
         
-        print(f"📎 URL normal (no R2): {url}")
+        # Si no es URL de R2, devolver tal cual
         return url
     
     return {
@@ -655,6 +640,82 @@ async def update_course_progress(db: Session, user_id: int, course_id: int):
         enrollment.last_accessed_at = func.now()
     
     return progress_percentage
+
+@router.get("/lessons/{lesson_id}/media-url")
+async def get_lesson_media_url(
+    lesson_id: int,
+    media_type: str,  # "video" o "file"
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerar URL firmada para archivos de lección (video o archivo descargable).
+    Útil cuando la URL expira durante la visualización.
+    """
+    # Verificar que la lección existe
+    lesson = db.query(Lesson).filter(
+        Lesson.id == lesson_id,
+        Lesson.is_published == True
+    ).first()
+    
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lección no encontrada")
+    
+    # Verificar acceso al curso
+    has_access = course_service.check_user_access(db, current_user.id, lesson.course_id)
+    
+    if not (current_user.role.name == 'admin' or lesson.is_free or has_access):
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes acceso a esta lección"
+        )
+    
+    # Obtener la URL según el tipo de media
+    url = None
+    if media_type == "video":
+        url = lesson.video_url
+    elif media_type == "file":
+        url = lesson.file_url
+    else:
+        raise HTTPException(status_code=400, detail="Tipo de media inválido. Use 'video' o 'file'")
+    
+    if not url:
+        raise HTTPException(status_code=404, detail=f"No hay {media_type} disponible para esta lección")
+    
+    # Generar URL firmada si es de R2
+    if url.startswith("https://") and "r2.dev" in url:
+        try:
+            from urllib.parse import urlparse
+            from app.core.config import settings
+            
+            parsed_url = urlparse(url)
+            object_key = parsed_url.path.lstrip('/')
+            
+            # Remover el nombre del bucket si está presente
+            bucket_prefix = f"{settings.R2_BUCKET_NAME}/"
+            if object_key.startswith(bucket_prefix):
+                object_key = object_key[len(bucket_prefix):]
+            
+            # Generar URL firmada con 1 hora de duración
+            signed_url = r2_service.generate_presigned_get_url(object_key, expiration=3600)
+            
+            return {
+                "media_type": media_type,
+                "url": signed_url,
+                "expires_in_seconds": 3600,
+                "expires_in_minutes": 60
+            }
+        except Exception as e:
+            print(f"Error generando URL firmada: {e}")
+            raise HTTPException(status_code=500, detail="Error generando URL de acceso")
+    
+    # Si no es de R2, devolver la URL directamente
+    return {
+        "media_type": media_type,
+        "url": url,
+        "expires_in_seconds": None,
+        "expires_in_minutes": None
+    }
 
 @router.get("/test-r2/{object_key:path}")
 async def test_r2_signed_url(
