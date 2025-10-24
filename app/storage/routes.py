@@ -217,3 +217,76 @@ async def proxy_upload(
     except Exception as e:
         print(f"❌ Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@router.post("/upload-to-public")
+async def upload_to_public_bucket(
+    file: UploadFile = File(...),
+    folder: str = Form("uploads"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Subir archivo al bucket PÚBLICO (tecnojuy-public).
+    Ideal para trailers de cursos y contenido que debe ser accesible sin autenticación.
+    """
+    try:
+        # Validar tamaño del archivo (500MB máximo)
+        MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
+        file_size = 0
+        
+        # Generar nombre único para el archivo
+        from datetime import datetime
+        import uuid
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else ''
+        object_key = f"{folder}/{timestamp}_{unique_id}.{file_extension}"
+        
+        print(f"🚀 Starting PUBLIC upload for {file.filename} -> {object_key}")
+        
+        # Leer contenido del archivo en chunks para archivos grandes
+        content = bytearray()
+        chunk_size = 8192  # 8KB chunks
+        
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            content.extend(chunk)
+            file_size += len(chunk)
+            
+            # Verificar límite de tamaño
+            if file_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=413, 
+                    detail=f"Archivo muy grande. Máximo permitido: {MAX_FILE_SIZE // 1024 // 1024}MB"
+                )
+        
+        print(f"📁 File read complete: {file_size / 1024 / 1024:.1f}MB")
+        
+        # Subir al bucket PÚBLICO
+        print(f"☁️ Uploading to PUBLIC R2 bucket...")
+        public_url = r2_service.upload_file_to_public_bucket(
+            object_key=object_key,
+            content=bytes(content),
+            content_type=file.content_type or 'application/octet-stream'
+        )
+        
+        if not public_url:
+            raise HTTPException(status_code=500, detail="Failed to upload file to public bucket")
+        
+        print(f"✅ PUBLIC upload successful: {public_url}")
+        
+        return {
+            "public_url": public_url,
+            "object_key": object_key,
+            "filename": f"{timestamp}_{unique_id}.{file_extension}",
+            "content_type": file.content_type,
+            "size": file_size
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Public upload error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Public upload failed: {str(e)}")
