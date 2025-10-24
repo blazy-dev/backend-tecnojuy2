@@ -537,11 +537,23 @@ class CourseService:
 
     @staticmethod
     def delete_lesson(db: Session, lesson_id: int) -> bool:
-        """Eliminar una lección"""
+        """Eliminar una lección y todos sus registros de progreso asociados"""
+        from app.db.models import LessonProgress
+        
         lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
         if not lesson:
             return False
-        # Intentar eliminar archivos asociados en R2 si existen
+        
+        # PRIMERO: Eliminar todos los registros de progreso de esta lección
+        try:
+            db.query(LessonProgress).filter(LessonProgress.lesson_id == lesson_id).delete(synchronize_session=False)
+            db.flush()  # Asegurar que se ejecute antes de eliminar la lección
+        except Exception as e:
+            print(f"Error eliminando registros de progreso: {e}")
+            db.rollback()
+            raise
+        
+        # SEGUNDO: Intentar eliminar archivos asociados en R2 si existen
         try:
             from urllib.parse import urlparse
             def _extract_key(url: str) -> str:
@@ -567,9 +579,11 @@ class CourseService:
                 keyv = _extract_key(lesson.video_url)
                 if keyv:
                     r2_service.delete_object(keyv)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error eliminando archivos de R2: {e}")
+            # No fallar si no se pueden eliminar los archivos
 
+        # TERCERO: Eliminar la lección
         db.delete(lesson)
         db.commit()
         return True
