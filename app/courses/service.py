@@ -468,12 +468,38 @@ class CourseService:
 
     @staticmethod
     def delete_course(db: Session, course_id: int) -> bool:
-        """Eliminar un curso (soft delete)"""
+        """
+        Eliminar un curso:
+        - Si está publicado (is_published=True): soft delete (lo despublica)
+        - Si NO está publicado (borrador): hard delete (lo elimina completamente)
+        """
         course = db.query(Course).filter(Course.id == course_id).first()
         if not course:
             return False
         
-        course.is_published = False  # Soft delete
+        # Si el curso nunca fue publicado, eliminarlo completamente (hard delete)
+        if not course.is_published:
+            # Primero eliminar todas las lecciones de todos los capítulos
+            chapters = db.query(Chapter).filter(Chapter.course_id == course_id).all()
+            for chapter in chapters:
+                # Eliminar lesson_progress asociados a las lecciones del capítulo
+                lessons = db.query(Lesson).filter(Lesson.chapter_id == chapter.id).all()
+                for lesson in lessons:
+                    db.query(LessonProgress).filter(LessonProgress.lesson_id == lesson.id).delete()
+                    db.delete(lesson)
+                # Eliminar el capítulo
+                db.delete(chapter)
+            
+            # Eliminar enrollments al curso
+            db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course_id).delete()
+            
+            # Finalmente eliminar el curso
+            db.delete(course)
+            db.commit()
+            return True
+        
+        # Si el curso está o estuvo publicado, hacer soft delete
+        course.is_published = False
         course.updated_at = datetime.utcnow()
         db.commit()
         return True
