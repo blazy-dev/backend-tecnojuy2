@@ -116,7 +116,6 @@ async def get_users(
 ):
     """Obtener lista de usuarios con paginación y filtros (solo admin)"""
     from app.db.models import CourseAccess
-    from sqlalchemy import func
     
     # Query base
     query = db.query(User).join(User.role)
@@ -158,13 +157,19 @@ async def get_users(
             "updated_at": user.updated_at.isoformat() if user.updated_at else None
         })
     
-    return {
-        "users": result,
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-        "has_more": (skip + limit) < total
-    }
+    # Si NO hay filtro de curso, devolver lista simple (compatibilidad con código antiguo)
+    # Si HAY filtro de curso, devolver objeto con metadata
+    if course_id:
+        return {
+            "users": result,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "has_more": (skip + limit) < total
+        }
+    else:
+        # Devolver lista simple para mantener compatibilidad
+        return result
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user_by_id(
