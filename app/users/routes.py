@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 
 from app.db.session import get_db
 from app.auth.dependencies import get_current_user, require_admin
@@ -112,51 +113,82 @@ async def get_users_admin_list(
     is_active: Optional[bool] = Query(True),
     course_id: Optional[int] = Query(None, description="Filtrar por curso"),
     has_access: Optional[bool] = Query(True, description="Filtrar por acceso al curso"),
+    order: str = Query("desc", pattern="^(asc|desc)$", description="Orden por fecha de creación: asc (más antiguos) | desc (más recientes)"),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """Lista paginada y filtrada de usuarios para admin, sin afectar el endpoint existente.
     Permite filtrar por rol, estado y curso (enrollments) y devuelve metadata de paginación.
     """
-    # Query base con join a rol para evitar N+1
-    query = db.query(User).join(Role)
+    # 1) Armar query base de IDs filtrados
+    ids_query = db.query(User.id).join(Role)
 
     if role_name:
-        query = query.filter(Role.name == role_name)
+        ids_query = ids_query.filter(Role.name == role_name)
 
     if is_active is not None:
-        query = query.filter(User.is_active == is_active)
+        ids_query = ids_query.filter(User.is_active == is_active)
 
-    # Filtrar por curso y estado de acceso (opcional)
     if course_id is not None:
-        query = query.join(CourseEnrollment, CourseEnrollment.user_id == User.id)
-        query = query.filter(CourseEnrollment.course_id == course_id)
+        ids_query = ids_query.join(CourseEnrollment, CourseEnrollment.user_id == User.id)
+        ids_query = ids_query.filter(CourseEnrollment.course_id == course_id)
         if has_access is not None:
-            query = query.filter(CourseEnrollment.has_access == has_access)
+            ids_query = ids_query.filter(CourseEnrollment.has_access == has_access)
 
-    total = query.count()
+    # Total optimizado (distinct por posibles joins)
+    total = db.query(func.count(func.distinct(User.id))).select_from(User).join(Role)
+    if role_name:
+        total = total.filter(Role.name == role_name)
+    if is_active is not None:
+        total = total.filter(User.is_active == is_active)
+    if course_id is not None:
+        total = total.join(CourseEnrollment, CourseEnrollment.user_id == User.id)
+        total = total.filter(CourseEnrollment.course_id == course_id)
+        if has_access is not None:
+            total = total.filter(CourseEnrollment.has_access == has_access)
+    total = total.scalar() or 0
 
-    users = (
-        query
-        .order_by(User.created_at.desc())
-        .offset(skip)
-        .limit(limit)
+    # Orden
+    order_clause = User.created_at.asc() if order == "asc" else User.created_at.desc()
+
+    # Subquery de ids paginados ya ordenados
+    ids_subq = (
+        ids_query.order_by(order_clause).offset(skip).limit(limit).subquery()
+    )
+
+    # 2) Traer sólo columnas necesarias para respuesta, evitando overhead de ORM completo
+    rows = (
+        db.query(
+            User.id,
+            User.email,
+            User.name,
+            User.avatar_url,
+            User.google_id,
+            User.is_active,
+            User.has_premium_access,
+            Role.name.label("role_name"),
+            User.created_at,
+            User.updated_at,
+        )
+        .join(Role)
+        .join(ids_subq, ids_subq.c.id == User.id)
+        .order_by(order_clause)
         .all()
     )
 
     users_out: List[UserResponse] = []
-    for u in users:
+    for r in rows:
         users_out.append(UserResponse(
-            id=u.id,
-            email=u.email,
-            name=u.name,
-            avatar_url=u.avatar_url,
-            google_id=u.google_id,
-            is_active=u.is_active,
-            has_premium_access=u.has_premium_access,
-            role_name=u.role.name if u.role else "",
-            created_at=u.created_at,
-            updated_at=u.updated_at
+            id=r.id,
+            email=r.email,
+            name=r.name,
+            avatar_url=r.avatar_url,
+            google_id=r.google_id,
+            is_active=r.is_active,
+            has_premium_access=r.has_premium_access,
+            role_name=r.role_name or "",
+            created_at=r.created_at,
+            updated_at=r.updated_at
         ))
 
     return {
