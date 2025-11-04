@@ -115,14 +115,14 @@ async def get_users(
     db: Session = Depends(get_db)
 ):
     """Obtener lista de usuarios con paginación y filtros (solo admin)"""
-    from app.db.models import CourseAccess
+    from app.db.models import CourseAccess, Role
     
     # Query base
     query = db.query(User).join(User.role)
     
     # Filtrar por rol
     if role_name:
-        query = query.filter(User.role.has(name=role_name))
+        query = query.filter(Role.name == role_name)
     
     # Filtrar por estado activo
     if is_active is not None:
@@ -168,6 +168,8 @@ async def get_users(
             "has_more": (skip + limit) < total
         }
     else:
+        # Devolver lista simple para mantener compatibilidad
+        return result
         # Devolver lista simple para mantener compatibilidad
         return result
 
