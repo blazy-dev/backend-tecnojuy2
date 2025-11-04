@@ -21,12 +21,20 @@ router = APIRouter()
 
 # Función auxiliar para generar URLs seguras de portadas
 def get_safe_cover_url(cover_url: str | None) -> str | None:
-    """Genera URL segura para la portada del curso con expiración de 1 hora"""
+    """
+    Genera URL segura para la portada del curso.
+    - Si es del bucket PÚBLICO: devuelve URL directa (sin expiración)
+    - Si es del bucket PRIVADO: genera URL firmada temporal (1 hora)
+    """
     if not cover_url:
         return None
     
-    # Si es una URL de R2, generar URL firmada temporal
-    if cover_url.startswith("https://") and "r2.dev" in cover_url:
+    # Si la URL es del bucket público, devolverla directamente (no expira)
+    if "tecnojuy-public" in cover_url:
+        return cover_url
+    
+    # Si es una URL del bucket privado (R2), generar URL firmada temporal
+    if cover_url.startswith("https://") and ("r2.dev" in cover_url or "tecnojuy2-uploads" in cover_url):
         try:
             from urllib.parse import urlparse
             from app.core.config import settings

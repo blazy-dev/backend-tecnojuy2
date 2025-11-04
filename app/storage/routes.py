@@ -149,7 +149,9 @@ async def proxy_upload(
     """
     Proxy upload: El frontend envía el archivo al backend,
     el backend lo sube a R2 y devuelve la URL pública.
-    Optimizado para archivos grandes con mejor logging.
+    
+    - Para 'courses' (portadas): sube al bucket PÚBLICO (sin expiración)
+    - Para otros folders: sube al bucket privado con URLs presignadas
     """
     try:
         # Validar tamaño del archivo (500MB máximo)
@@ -187,30 +189,58 @@ async def proxy_upload(
         
         print(f"📁 File read complete: {file_size / 1024 / 1024:.1f}MB")
         
-        # Subir directamente a R2 usando el servicio
-        print(f"☁️ Uploading to R2...")
-        success, error_message = await r2_service.upload_file_direct(
-            object_key=object_key,
-            content=bytes(content),
-            content_type=file.content_type or 'application/octet-stream'
-        )
+        # Detectar si es una portada de curso (folder 'courses')
+        # Las portadas deben estar en bucket público para acceso permanente
+        is_course_cover = folder.startswith('courses')
         
-        if not success:
-            print(f"❌ R2 upload failed: {error_message}")
-            raise HTTPException(status_code=500, detail=f"Failed to upload file to R2: {error_message}")
-        
-        print(f"✅ R2 upload successful: {object_key}")
-        
-        # Generar URL firmada (presigned) con larga duración para portadas
-        presigned_url = r2_service.generate_presigned_get_url(object_key, expiration=86400*7)  # 7 días
-        
-        return {
-            "public_url": presigned_url,
-            "object_key": object_key,
-            "filename": f"{timestamp}_{unique_id}.{file_extension}",
-            "content_type": file.content_type,
-            "size": file_size
-        }
+        if is_course_cover:
+            # Subir al bucket PÚBLICO (sin expiración de URL)
+            print(f"☁️ Uploading to PUBLIC R2 bucket...")
+            success, public_url = await r2_service.upload_file_to_public_bucket(
+                object_key=object_key,
+                content=bytes(content),
+                content_type=file.content_type or 'application/octet-stream'
+            )
+            
+            if not success:
+                print(f"❌ Public R2 upload failed: {public_url}")
+                raise HTTPException(status_code=500, detail=f"Failed to upload file to public R2: {public_url}")
+            
+            print(f"✅ PUBLIC R2 upload successful: {public_url}")
+            
+            return {
+                "public_url": public_url,
+                "object_key": object_key,
+                "filename": f"{timestamp}_{unique_id}.{file_extension}",
+                "content_type": file.content_type,
+                "size": file_size
+            }
+        else:
+            # Subir al bucket PRIVADO (con URLs presignadas)
+            print(f"☁️ Uploading to PRIVATE R2 bucket...")
+            success, error_message = await r2_service.upload_file_direct(
+                object_key=object_key,
+                content=bytes(content),
+                content_type=file.content_type or 'application/octet-stream'
+            )
+            
+            if not success:
+                print(f"❌ R2 upload failed: {error_message}")
+                raise HTTPException(status_code=500, detail=f"Failed to upload file to R2: {error_message}")
+            
+            print(f"✅ R2 upload successful: {object_key}")
+            
+            # Para archivos privados, generar URL pública directa del bucket
+            # Se regenerará con presigned URL cuando se acceda
+            public_url = r2_service.get_object_url(object_key)
+            
+            return {
+                "public_url": public_url,
+                "object_key": object_key,
+                "filename": f"{timestamp}_{unique_id}.{file_extension}",
+                "content_type": file.content_type,
+                "size": file_size
+            }
         
     except HTTPException:
         raise
