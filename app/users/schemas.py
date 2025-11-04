@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -41,4 +41,13 @@ class RoleResponse(RoleBase):
     
     class Config:
         from_attributes = True
+
+
+class PaginatedUsersResponse(BaseModel):
+    users: List[UserResponse]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+
 

@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.auth.dependencies import get_current_user, require_admin
-from app.users.schemas import UserResponse, UserUpdate, RoleResponse
+from app.users.schemas import UserResponse, UserUpdate, RoleResponse, PaginatedUsersResponse
 from app.users.service import UserService, RoleService
-from app.db.models import User
+from app.db.models import User, Role, CourseEnrollment
 
 router = APIRouter()
 
@@ -102,6 +102,69 @@ async def get_users_stats(
         "active_users": active_users,
         "premium_users": premium_users,
         "inactive_users": total_users - active_users
+    }
+
+@router.get("/admin/list/", response_model=PaginatedUsersResponse)
+async def get_users_admin_list(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=1000),
+    role_name: Optional[str] = Query("alumno"),
+    is_active: Optional[bool] = Query(True),
+    course_id: Optional[int] = Query(None, description="Filtrar por curso"),
+    has_access: Optional[bool] = Query(True, description="Filtrar por acceso al curso"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Lista paginada y filtrada de usuarios para admin, sin afectar el endpoint existente.
+    Permite filtrar por rol, estado y curso (enrollments) y devuelve metadata de paginación.
+    """
+    # Query base con join a rol para evitar N+1
+    query = db.query(User).join(Role)
+
+    if role_name:
+        query = query.filter(Role.name == role_name)
+
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+
+    # Filtrar por curso y estado de acceso (opcional)
+    if course_id is not None:
+        query = query.join(CourseEnrollment, CourseEnrollment.user_id == User.id)
+        query = query.filter(CourseEnrollment.course_id == course_id)
+        if has_access is not None:
+            query = query.filter(CourseEnrollment.has_access == has_access)
+
+    total = query.count()
+
+    users = (
+        query
+        .order_by(User.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    users_out: List[UserResponse] = []
+    for u in users:
+        users_out.append(UserResponse(
+            id=u.id,
+            email=u.email,
+            name=u.name,
+            avatar_url=u.avatar_url,
+            google_id=u.google_id,
+            is_active=u.is_active,
+            has_premium_access=u.has_premium_access,
+            role_name=u.role.name if u.role else "",
+            created_at=u.created_at,
+            updated_at=u.updated_at
+        ))
+
+    return {
+        "users": users_out,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + limit) < total
     }
 
 @router.get("/", response_model=List[UserResponse])
