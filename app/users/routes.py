@@ -104,74 +104,41 @@ async def get_users_stats(
         "inactive_users": total_users - active_users
     }
 
-@router.get("/")
+@router.get("/", response_model=List[UserResponse])
 async def get_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     role_name: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
-    course_id: Optional[int] = Query(None, description="Filtrar por curso con acceso"),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Obtener lista de usuarios con paginación y filtros (solo admin)"""
-    from app.db.models import CourseAccess, Role
+    """Obtener lista de usuarios (solo admin)"""
+    users = UserService.get_users(
+        db=db,
+        skip=skip,
+        limit=limit,
+        role_name=role_name,
+        is_active=is_active
+    )
     
-    # Query base
-    query = db.query(User).join(User.role)
-    
-    # Filtrar por rol
-    if role_name:
-        query = query.filter(Role.name == role_name)
-    
-    # Filtrar por estado activo
-    if is_active is not None:
-        query = query.filter(User.is_active == is_active)
-    
-    # Filtrar por curso con acceso
-    if course_id:
-        query = query.join(CourseAccess).filter(CourseAccess.course_id == course_id)
-    
-    # Contar total antes de paginar
-    total = query.count()
-    
-    # Ordenar por fecha de creación (más recientes primero)
-    query = query.order_by(User.created_at.desc())
-    
-    # Paginar
-    users = query.offset(skip).limit(limit).all()
-    
-    # Formatear respuesta
     result = []
     for user in users:
-        result.append({
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "avatar_url": user.avatar_url,
-            "google_id": user.google_id,
-            "is_active": user.is_active,
-            "has_premium_access": user.has_premium_access,
-            "role_name": user.role.name,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None
-        })
+        user_with_role = db.query(User).join(User.role).filter(User.id == user.id).first()
+        result.append(UserResponse(
+            id=user_with_role.id,
+            email=user_with_role.email,
+            name=user_with_role.name,
+            avatar_url=user_with_role.avatar_url,
+            google_id=user_with_role.google_id,
+            is_active=user_with_role.is_active,
+            has_premium_access=user_with_role.has_premium_access,
+            role_name=user_with_role.role.name,
+            created_at=user_with_role.created_at,
+            updated_at=user_with_role.updated_at
+        ))
     
-    # Si NO hay filtro de curso, devolver lista simple (compatibilidad con código antiguo)
-    # Si HAY filtro de curso, devolver objeto con metadata
-    if course_id:
-        return {
-            "users": result,
-            "total": total,
-            "skip": skip,
-            "limit": limit,
-            "has_more": (skip + limit) < total
-        }
-    else:
-        # Devolver lista simple para mantener compatibilidad
-        return result
-        # Devolver lista simple para mantener compatibilidad
-        return result
+    return result
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user_by_id(
