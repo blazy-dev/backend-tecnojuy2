@@ -19,6 +19,54 @@ from sqlalchemy import and_, func
 
 router = APIRouter()
 
+# Función auxiliar para regenerar URLs firmadas de R2
+def regenerate_presigned_url(url: str | None, expiration: int = 3600) -> str | None:
+    """
+    Regenera URL firmada de R2 si es necesario.
+    - Si es URL de R2: genera nueva URL firmada con expiración especificada
+    - Si es URL pública o de otro tipo: devuelve tal cual
+    
+    Args:
+        url: URL original (puede ser firmada expirada o pública)
+        expiration: Tiempo de expiración en segundos (default: 1 hora)
+    
+    Returns:
+        URL firmada regenerada o URL original si no aplica
+    """
+    if not url:
+        return None
+    
+    # Detectar URLs de R2 (incluyendo todos los formatos posibles)
+    is_r2_url = url.startswith("https://") and any(
+        pattern in url for pattern in ["r2.dev", "r2.cloudflarestorage.com", "tecnojuy2-uploads"]
+    )
+    
+    if is_r2_url:
+        try:
+            from urllib.parse import urlparse
+            from app.core.config import settings
+            
+            parsed_url = urlparse(url)
+            # Extraer el object_key de la URL (path sin el bucket)
+            object_key = parsed_url.path.lstrip('/')
+            
+            # Remover el nombre del bucket si está presente en el path
+            bucket_prefix = f"{settings.R2_BUCKET_NAME}/"
+            if object_key.startswith(bucket_prefix):
+                object_key = object_key[len(bucket_prefix):]
+            
+            # Generar nueva URL firmada
+            signed_url = r2_service.generate_presigned_get_url(object_key, expiration=expiration)
+            print(f"🔄 URL firmada regenerada para: {object_key[:50]}... (exp: {expiration}s)")
+            return signed_url
+        except Exception as e:
+            print(f"❌ Error regenerando URL firmada para {url[:80]}: {e}")
+            # En caso de error, devolver la URL original (mejor que nada)
+            return url
+    
+    # Si no es URL de R2, devolver tal cual
+    return url
+
 # Función auxiliar para generar URLs seguras de portadas
 def get_safe_cover_url(cover_url: str | None) -> str | None:
     """
@@ -402,8 +450,8 @@ async def get_course_structure_with_access(
             
             # Solo incluir URLs si tiene acceso
             if has_lesson_access:
-                lesson_data["video_url"] = lesson.video_url
-                lesson_data["file_url"] = lesson.file_url
+                lesson_data["video_url"] = regenerate_presigned_url(lesson.video_url)
+                lesson_data["file_url"] = regenerate_presigned_url(lesson.file_url)
                 lesson_data["text_content"] = lesson.text_content
             
             lesson_list.append(lesson_data)
@@ -475,33 +523,8 @@ async def get_lesson_content(
     
     # Generar URLs firmadas para archivos con 1 hora de duración
     def get_signed_url(url: str | None) -> str | None:
-        if not url:
-            return None
-        
-        # Si es una URL de R2, generar URL firmada temporal
-        if url.startswith("https://") and "r2.dev" in url:
-            try:
-                from urllib.parse import urlparse
-                from app.core.config import settings
-                
-                parsed_url = urlparse(url)
-                object_key = parsed_url.path.lstrip('/')
-                
-                # Remover el nombre del bucket si está presente
-                bucket_prefix = f"{settings.R2_BUCKET_NAME}/"
-                if object_key.startswith(bucket_prefix):
-                    object_key = object_key[len(bucket_prefix):]
-                
-                # Generar URL firmada con 1 hora de duración (3600 segundos)
-                # Suficiente para una sesión de visualización completa
-                signed_url = r2_service.generate_presigned_get_url(object_key, expiration=3600)
-                return signed_url
-            except Exception as e:
-                print(f"Error generando URL firmada para {url}: {e}")
-                return url
-        
-        # Si no es URL de R2, devolver tal cual
-        return url
+        """Wrapper para regenerate_presigned_url con 1 hora de expiración"""
+        return regenerate_presigned_url(url, expiration=3600)
     
     return {
         "id": lesson.id,
